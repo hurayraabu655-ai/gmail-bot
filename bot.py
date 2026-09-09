@@ -1,5 +1,7 @@
 import logging
 import sqlite3
+from flask import Flask
+from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -7,23 +9,35 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 TOKEN = "8938601509:AAGk1BrRWyTkw_Pomzvq2hNihuKXF1j7qFQ"
 CHANNEL_LINK = "https://t.me/aserningbd"
 ADMIN_USERNAME = "Huray6" # আপনার ইউজারনেম দিন
-ADMIN_ID = 5628585499 # এখানে আপনার টেলিগ্রাম Numeric ID দিন (BotFather বা @userinfobot থেকে পাবেন)
+ADMIN_ID = 5628585499 # এখানে আপনার টেলিগ্রাম Numeric ID দিন
 GMAIL_PRICE = 15.0 # প্রতি জিমেইলের দাম (BDT)
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# ২. ডাটাবেজ সেটআপ
+# ২. Flask সার্ভার (Render Free Web Service-এ বট সচল রাখার জন্য)
+app_flask = Flask('')
+
+@app_flask.route('/')
+def home():
+    return "Telegram Bot is running 24/7!"
+
+def run_flask():
+    app_flask.run(host='0.0.0.0', port=10000)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.start()
+
+# ৩. ডাটাবেজ সেটআপ
 def init_db():
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    # ইউজার টেবিল
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             balance REAL DEFAULT 0.0
         )
     ''')
-    # জিমেইল স্টক টেবিল
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gmail_stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,10 +70,10 @@ def update_user_balance(user_id, amount):
     conn.commit()
     conn.close()
 
-# ৩. মূল হ্যান্ডলার
+# ৪. মূল হ্যান্ডলার
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    get_user_balance(user_id) # ডাটাবেজে ইউজার এন্ট্রি
+    get_user_balance(user_id)
     keyboard = [
         [InlineKeyboardButton("📢 Join Our Channel", url=CHANNEL_LINK)],
         [InlineKeyboardButton("✅ Verify", callback_data='verify')]
@@ -104,7 +118,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif balance < GMAIL_PRICE:
             await query.edit_message_text(f"⚠️ আপনার পর্যাপ্ত ব্যালেন্স নেই!\n\nজিমেইলের দাম: {GMAIL_PRICE} BDT\nআপনার ব্যালেন্স: {balance:.2f} BDT\n\nদয়া করে Wallet থেকে Add Money করুন।", reply_markup=back_keyboard)
         else:
-            # অটোমেটিক স্টক থেকে জিমেইল ডেলিভারি
             gmail_id, gmail_acc = stock_item
             cursor.execute('DELETE FROM gmail_stock WHERE id = ?', (gmail_id,))
             conn.commit()
@@ -153,7 +166,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'back_to_menu':
         await show_main_menu(query)
 
-# ৪. এডমিন কমান্ডসমূহ
+# ৫. এডমিন কমান্ডসমূহ
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -190,11 +203,14 @@ async def check_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📦 বর্তমান জিমেইল স্টক: {count} টি")
 
 if __name__ == '__main__':
+    # Flask সার্ভার ব্যাকগ্রাউন্ডে রান করানো
+    keep_alive()
+    
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("addstock", add_stock))
     app.add_handler(CommandHandler("addbal", add_balance))
     app.add_handler(CommandHandler("stock", check_stock))
     app.add_handler(CallbackQueryHandler(button_click))
-    print("Bot started with Database...")
+    print("Bot started with Database & Flask...")
     app.run_polling()
